@@ -23,8 +23,12 @@ public static class Program
         Option<DirectoryInfo> uploadWorkspaceOption =
             new Option<DirectoryInfo>(["--workspace", "-w"], "The workspace directory to upload.")
                 { IsRequired = true };
+
+        Option<DirectoryInfo> deleteWorkspaceOption =
+            new Option<DirectoryInfo>(["--workspace", "-w"], "The workspace directory to delete.");
         
         Option<ulong?> uploadItemIdOption = new Option<ulong?>(["--id", "-i"], "The ID of the workshop item to update. If this is not specified, we'll look for mod_id.txt in the workspace. If it is also not present, a new item is created.");
+        Option<ulong?> deleteItemIdOption = new Option<ulong?>(["--id", "-i"], "The ID of the workshop item to delete. If this is not specified, we'll look for mod_id.txt in the workspace.");
 
         Command newCommand = new("new", "Create a new workspace for a new mod.")
         {
@@ -41,9 +45,18 @@ public static class Program
         
         uploadCommand.SetHandler(UploadCommand.UploadWorkspace, uploadWorkspaceOption, uploadItemIdOption);
 
+        Command removeCommand = new("remove", "Remove the mod from the workshop. Your local workspace will be unaffected.")
+        {
+            deleteWorkspaceOption,
+            deleteItemIdOption
+        };
+        
+        removeCommand.SetHandler(RemoveCommand.Remove, deleteWorkspaceOption, deleteItemIdOption);
+
         RootCommand rootCommand = new("Utility for creating and updating STS2 Steam Workshop mods.");
         rootCommand.AddCommand(newCommand);
         rootCommand.AddCommand(uploadCommand);
+        rootCommand.AddCommand(removeCommand);
         rootCommand.SetHandler(NewCommand.CreateNewWorkspace);
 
         return rootCommand.InvokeAsync(args).Result;
