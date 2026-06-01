@@ -6,7 +6,6 @@ namespace ModUploader;
 public static class UploadCommand
 {
     private static readonly AppId_t _sts2AppId = new(2868840);
-    private static bool _steamIsInitialized;
     
     public static async Task<int> UploadWorkspace(DirectoryInfo workspaceDirectory, ulong? itemIdArg)
     {
@@ -76,27 +75,10 @@ public static class UploadCommand
         }
 
         // Validation is all done. Start the upload process.
-        Log.Info("Initializing Steam");
-
-        try
+        if (!Program.InitializeSteam())
         {
-            ESteamAPIInitResult result = SteamAPI.InitEx(out string initErrorMessage);
-
-            if (result != ESteamAPIInitResult.k_ESteamAPIInitResult_OK)
-            {
-                Log.Info($"Steam initialization failed! Result: {result}, message: {initErrorMessage}");
-                return 1;
-            }
-        }
-        catch (Exception e)
-        {
-            Log.Info($"Steam initialization threw an exception: {e}");
             return 1;
         }
-        
-        // Start running callbacks, otherwise we will never get steam call results
-        _steamIsInitialized = true;
-        _ = DoRunCallbacks();
         
         Log.Info("=================");
         Log.Info($"By submitting '{modConfig.title}' to the workshop,\n" +
@@ -187,9 +169,6 @@ public static class UploadCommand
             await using StreamWriter writer = new(fileStream);
             writer.WriteLine(workshopItem.m_PublishedFileId);
         }
-
-        SteamAPI.Shutdown();
-        _steamIsInitialized = false;
         
         return 0;
     }
@@ -317,16 +296,6 @@ public static class UploadCommand
                 SteamUGC.GetItemUpdateProgress(updateHandle, out ulong bytesProcessed, out ulong bytesTotal);
             Log.Info($"Status: {status}, bytes processed: {bytesProcessed}/{bytesTotal} ({bytesProcessed/bytesTotal:P2})");
             await Task.Delay(1000, cancelToken.Token);
-        }
-    }
-
-    private static async Task DoRunCallbacks()
-    {
-        // RunCallbacks must be run periodically to flush call results
-        while (_steamIsInitialized)
-        {
-            SteamAPI.RunCallbacks();
-            await Task.Delay(50);
         }
     }
 

@@ -5,32 +5,12 @@ namespace ModUploader;
 
 public static class RemoveCommand
 {
-    private static bool _steamIsInitialized;
-    
     public static async Task<int> Remove(DirectoryInfo? workspaceDirectory, ulong? itemIdArg)
     {
-        // Validation is all done. Start the upload process.
-        Log.Info("Initializing Steam");
-
-        try
+        if (!Program.InitializeSteam())
         {
-            ESteamAPIInitResult result = SteamAPI.InitEx(out string initErrorMessage);
-
-            if (result != ESteamAPIInitResult.k_ESteamAPIInitResult_OK)
-            {
-                Log.Info($"Steam initialization failed! Result: {result}, message: {initErrorMessage}");
-                return 1;
-            }
-        }
-        catch (Exception e)
-        {
-            Log.Info($"Steam initialization threw an exception: {e}");
             return 1;
         }
-        
-        // Start running callbacks, otherwise we will never get steam call results
-        _steamIsInitialized = true;
-        _ = DoRunCallbacks();
         
         ulong? modId = null;
 
@@ -45,7 +25,7 @@ public static class RemoveCommand
 
                 if (!ulong.TryParse(modIdStr, out ulong parsedModId))
                 {
-                    Log.Info("Tried to read mod ID from mod_id.txt, but the text could not be parsed as a mod ID!");
+                    Log.Error("Tried to read mod ID from mod_id.txt, but the text could not be parsed as a mod ID!");
                     return 1;
                 }
 
@@ -53,7 +33,7 @@ public static class RemoveCommand
             }
             else
             {
-                Log.Info("No mod_id.txt found in the workspace! Specify the ID using the id argument instead");
+                Log.Error("No mod_id.txt found in the workspace! Specify the ID using the id argument instead");
                 return 1;
             }
         }
@@ -63,7 +43,7 @@ public static class RemoveCommand
         }
         else
         {
-            Log.Info("At least one of workspace or id must be specified!");
+            Log.Error("At least one of workspace or id must be specified!");
             return 1;
         }
 
@@ -75,7 +55,7 @@ public static class RemoveCommand
 
         if (removeResult.m_eResult != EResult.k_EResultOK)
         {
-            Log.Info($"Deletion failed! Result: {removeResult.m_eResult}");
+            Log.Error($"Deletion failed! Result: {removeResult.m_eResult}");
             return 1;
         }
 
@@ -90,20 +70,8 @@ public static class RemoveCommand
         }
 
         Log.Info($"Successfully deleted workshop item with ID {removeResult.m_nPublishedFileId.m_PublishedFileId}");
-        SteamAPI.Shutdown();
-        _steamIsInitialized = false;
         
         return 0;
     }
     
-    private static async Task DoRunCallbacks()
-    {
-        // RunCallbacks must be run periodically to flush call results
-        while (_steamIsInitialized)
-        {
-            SteamAPI.RunCallbacks();
-            await Task.Delay(50);
-        }
-    }
-
 }

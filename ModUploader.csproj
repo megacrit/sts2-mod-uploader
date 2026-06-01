@@ -16,13 +16,30 @@
         <Content Include="template\**\*">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
+        <ContentWithTargetPath Include="steam\steam_appid.txt">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <TargetPath>steam_appid.txt</TargetPath>
+        </ContentWithTargetPath>
+    </ItemGroup>
+    
+    <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('win'))">
         <ContentWithTargetPath Include="steam\steam_api64.dll">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
             <TargetPath>steam_api64.dll</TargetPath>
         </ContentWithTargetPath>
-        <ContentWithTargetPath Include="steam\steam_appid.txt">
+    </ItemGroup>
+    
+    <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('linux'))">
+        <ContentWithTargetPath Include="steam\libsteam_api.so">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-            <TargetPath>steam_appid.txt</TargetPath>
+            <TargetPath>libsteam_api.so</TargetPath>
+        </ContentWithTargetPath>
+    </ItemGroup>
+    
+    <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('osx'))">
+        <ContentWithTargetPath Include="steam\steam_api.bundle\Contents\MacOS\libsteam_api.dylib">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <TargetPath>libsteam_api.dylib</TargetPath>
         </ContentWithTargetPath>
     </ItemGroup>
 
