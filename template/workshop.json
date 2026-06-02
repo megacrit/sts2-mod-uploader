@@ -4,7 +4,5 @@
   "visibility": "private",
   "changeNote": "None",
   "tags": [],
-  "dependencies": [],
-  "minBranch": null,
-  "maxBranch": null
+  "dependencies": []
 }

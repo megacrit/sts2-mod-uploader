@@ -24,6 +24,11 @@ Most properties can be substituted with `null` or removed from the JSON if you w
                                  Note: the tag "tool" is reserved for mods that function as tools.
   "dependencies": []          -- A list of mods that your mod depends on.
                                  These should be mod IDs (can be found in the workshop URL).
+
+
+                              -- The below two seem to have weird behavior but I'm including them
+                                 in case Steam fixes it. Prefer updating them on the web instead.
+                                 Set to `null` or remove them to say that you support all versions.
   "minBranch": "public-beta"  -- Minimum branch supported by this mod.
   "maxBranch": "public"       -- Maximum branch supported by this mod.
 }
