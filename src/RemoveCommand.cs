@@ -50,7 +50,7 @@ public static class RemoveCommand
         Log.Info($"Removing workshop item with id {modId.Value}...");
 
         SteamAPICall_t removeCall = SteamUGC.DeleteItem(new PublishedFileId_t(modId.Value));
-        SteamCallResult<DeleteItemResult_t> removeCallResult = new(removeCall);
+        using SteamCallResult<DeleteItemResult_t> removeCallResult = new(removeCall);
         DeleteItemResult_t removeResult = await removeCallResult.Task;
 
         if (removeResult.m_eResult != EResult.k_EResultOK)
