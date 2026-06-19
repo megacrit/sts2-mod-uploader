@@ -6,7 +6,7 @@
 3. Place your mod content in the `Content` directory within the workspace. This is what will be uploaded to the Steam workshop.
 4. Fill in the details for the `workspace.json` located in your mod's workspace. If the fields are unclear, refer to the other README.md file located in the mod's workspace for descriptions of what each field does.
 5. Replace the "image.jpg" in your mod's workspace with an image of the same name that you wish to use for your mod.
-6. Open a command line window inside this folder.
+6. Open a command line window inside the folder with the `ModUploader.exe` file.
 7. Run `ModUploader.exe upload -w <workspace-folder>` to upload the mod.
 
 ## Updating an existing mod
