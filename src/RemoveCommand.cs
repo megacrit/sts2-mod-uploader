@@ -14,8 +14,18 @@ public static class RemoveCommand
         
         ulong? modId = null;
 
-        if (workspaceDirectory != null)
+        if (itemIdArg != null)
         {
+            modId = itemIdArg;
+        }
+        else if (workspaceDirectory != null)
+        {
+            if (!workspaceDirectory.Exists)
+            {
+                Log.Error($"No directory at {workspaceDirectory}!");
+                return 1;
+            }
+
             FileInfo modIdFile = new(Path.Combine(workspaceDirectory.FullName, "mod_id.txt"));
             if (modIdFile.Exists)
             {
@@ -36,10 +46,6 @@ public static class RemoveCommand
                 Log.Error("No mod_id.txt found in the workspace! Specify the ID using the id argument instead");
                 return 1;
             }
-        }
-        else if (itemIdArg != null)
-        {
-            modId = itemIdArg;
         }
         else
         {
