@@ -7,10 +7,17 @@ public static class UploadCommand
 {
     private static readonly AppId_t _sts2AppId = new(2868840);
 
+    private struct AdditionalPreview
+    {
+        public EItemPreviewType type;
+        public string originalName;
+    }
+
     private struct WorkshopItemDetails
     {
         public required List<ulong> dependencies;
         public required List<EUGCContentDescriptorID> contentDescriptors;
+        public required List<AdditionalPreview> previews;
     }
     
     public static async Task<int> UploadWorkspace(DirectoryInfo workspaceDirectory, ulong? itemIdArg)
@@ -179,7 +186,8 @@ public static class UploadCommand
             existingDetails = new WorkshopItemDetails
             {
                 contentDescriptors = [],
-                dependencies = []
+                dependencies = [],
+                previews = []
             };
         }
 
@@ -265,6 +273,8 @@ public static class UploadCommand
         {
             Log.Warn("Failed to set preview image!");
         }
+
+        UpdatePreviews(updateHandle, workspaceDirectory, existingDetails.Value);
 
         SteamAPICall_t updateItemCall = SteamUGC.SubmitItemUpdate(updateHandle, modConfig.changeNote ?? "");
         using SteamCallResult<SubmitItemUpdateResult_t> updateItemCallResult = new(updateItemCall);
@@ -353,6 +363,42 @@ public static class UploadCommand
         return succeeded;
     }
 
+    private static void UpdatePreviews(UGCUpdateHandle_t handle, DirectoryInfo workspaceDirectory, WorkshopItemDetails existingDetails)
+    {
+        DirectoryInfo previewsDirectory = new DirectoryInfo(Path.Combine(workspaceDirectory.FullName, "previews"));
+        if (!previewsDirectory.Exists) return;
+        
+        Dictionary<string, int> fileToIndex = [];
+
+        for (int i = 0; i < existingDetails.previews.Count; i++)
+        {
+            fileToIndex[existingDetails.previews[i].originalName] = i;
+        }
+
+        foreach (FileInfo fileInfo in previewsDirectory.GetFiles())
+        {
+            if (fileToIndex.TryGetValue(fileInfo.Name, out int existingIndex))
+            {
+                SteamUGC.UpdateItemPreviewFile(handle, (uint)existingIndex, fileInfo.FullName);
+                
+                // Remove files from the dict as they are updated. At the end, we'll remove all the remaining files
+                // from the backend.
+                fileToIndex.Remove(fileInfo.Name);
+            }
+            else
+            {
+                Log.Info($"Adding new preview file: {fileInfo.FullName}");
+                SteamUGC.AddItemPreviewFile(handle, fileInfo.FullName, EItemPreviewType.k_EItemPreviewType_Image);
+            }
+        }
+
+        foreach (KeyValuePair<string, int> pair in fileToIndex)
+        {
+            Log.Info($"Removing preview file: {pair.Key}");
+            SteamUGC.RemoveItemPreview(handle, (uint)pair.Value);
+        }
+    }
+
     private static async Task<bool> AddDependency(PublishedFileId_t workshopItem, ulong dependency)
     {
         SteamAPICall_t call = SteamUGC.AddDependency(workshopItem, new PublishedFileId_t(dependency));
@@ -393,8 +439,10 @@ public static class UploadCommand
 
         try
         {
-            // Children (dependencies) are only populated in the query results if we explicitly request them.
+            // These are only populated in the query results if we explicitly request them.
+            // Children means dependencies in this case
             SteamUGC.SetReturnChildren(handle, true);
+            SteamUGC.SetReturnAdditionalPreviews(handle, true);
 
             SteamAPICall_t call = SteamUGC.SendQueryUGCRequest(handle);
             using SteamCallResult<SteamUGCQueryCompleted_t> callResult = new(call);
@@ -416,7 +464,8 @@ public static class UploadCommand
             WorkshopItemDetails result = new()
             {
                 contentDescriptors = [],
-                dependencies = []
+                dependencies = [],
+                previews = []
             };
 
             uint numChildren = details.m_unNumChildren;
@@ -451,6 +500,29 @@ public static class UploadCommand
             for (int i = 0; i < count; i++)
             {
                 result.contentDescriptors.Add(contentDescriptors[i]);
+            }
+
+            uint previewCount = SteamUGC.GetQueryUGCNumAdditionalPreviews(handle, 0);
+            for (int i = 0; i < previewCount; i++)
+            {
+                bool gotPreview = SteamUGC.GetQueryUGCAdditionalPreview(
+                    handle,
+                    0,
+                    (uint)i,
+                    out string urlOrVideo, 9999,
+                    out string originalFileName, 9999,
+                    out EItemPreviewType type);
+                
+                if (!gotPreview)
+                {
+                    Log.Error("GetQueryUGCAdditionalPreview failed! This is likely a bug in the ModUploader.");
+                }
+                
+                result.previews.Add(new AdditionalPreview
+                {
+                    type = type,
+                    originalName = originalFileName
+                });
             }
 
             return result;

@@ -1,11 +1,20 @@
 # Steam Workshop Mod
 
 ## Directory layout
+
 * workshop.json -- The config describing the Steam workspace mod.
+
 * content       -- Where you should place the mod files to be uploaded to Steam Workshop.
                    This should be at least a JSON file, and probably a PCK & DLL.
-* image.png     -- The image shown in the Steam Workshop. Replace with your own!
-                -- Must be less than 1MB.
+
+* previews      -- Additional preview images, shown alongside image.png. Optional.
+                   Must be less than 1MB. Missing images are removed from the backend,
+                   keyed by filename.
+                   If this directory is not present, all previews will remain unchanged.
+
+* image.png     -- The image shown in the Steam Workshop. Required. Replace with your own!
+                   Must be less than 1MB.
+
 * README.md     -- This readme document
 
 ## `workshop.json` Properties
