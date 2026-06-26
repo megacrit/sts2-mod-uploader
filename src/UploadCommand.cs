@@ -294,6 +294,20 @@ public static class UploadCommand
             return 1;
         }
         
+        if (!await UpdateDependencies(workshopItem, existingDetails.Value.dependencies, modConfig.dependencies ?? []))
+        {
+            return 1;
+        }
+
+        Log.Info($"Successfully uploaded '{modConfig.title}' to the workshop with id {workshopItem.m_PublishedFileId}! Browsing to the item in Steam.");
+        SteamFriends.ActivateGameOverlayToWebPage($"steam://url/CommunityFilePage/{workshopItem.m_PublishedFileId}");
+
+        if (updateItemResult.m_bUserNeedsToAcceptWorkshopLegalAgreement)
+        {
+            Log.Warn("You will need to accept the workshop legal agreement before you can set your mod to visible:");
+            Log.Warn("https://steamcommunity.com/sharedfiles/workshoplegalagreement");
+        }
+
         // Since we successfully uploaded, if it didn't exist already, put a mod_id.txt in the directory for later, to
         // identify which mod ID this is.
         if (modIdTxt == null || modIdTxt.Value != workshopItem.m_PublishedFileId)
@@ -302,14 +316,6 @@ public static class UploadCommand
             await using StreamWriter writer = new(fileStream);
             writer.WriteLine(workshopItem.m_PublishedFileId);
         }
-
-        if (!await UpdateDependencies(workshopItem, existingDetails.Value.dependencies, modConfig.dependencies ?? []))
-        {
-            return 1;
-        }
-
-        Log.Info($"Successfully uploaded '{modConfig.title}' to the workshop with id {workshopItem.m_PublishedFileId}! Browsing to the item in Steam.");
-        SteamFriends.ActivateGameOverlayToWebPage($"steam://url/CommunityFilePage/{workshopItem.m_PublishedFileId}");
         
         return 0;
     }
