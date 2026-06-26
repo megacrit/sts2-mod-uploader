@@ -6,6 +6,12 @@ namespace ModUploader;
 public static class UploadCommand
 {
     private static readonly AppId_t _sts2AppId = new(2868840);
+
+    private struct WorkshopItemDetails
+    {
+        public required List<ulong> dependencies;
+        public required List<EUGCContentDescriptorID> contentDescriptors;
+    }
     
     public static async Task<int> UploadWorkspace(DirectoryInfo workspaceDirectory, ulong? itemIdArg)
     {
@@ -55,11 +61,40 @@ public static class UploadCommand
             Log.Error("Tried to parse workshop.json, but it returned null!");
             return 1;
         }
+        
+        ERemoteStoragePublishedFileVisibility? visibility = null;
 
-        if (modConfig.visibility != null && VisibilityFromString(modConfig.visibility) == null)
+        if (modConfig.visibility != null)
         {
-            Log.Error($"Invalid visibility '{modConfig.visibility}' in workshop.json! Should be: private, public, unlisted, or friends_only");
-            return 1;
+            visibility = VisibilityFromString(modConfig.visibility);
+
+            if (visibility == null)
+            {
+                Log.Error(
+                    $"Invalid visibility '{modConfig.visibility}' in workshop.json! Should be: private, public, unlisted, or friends_only");
+                return 1;
+            }
+        }
+
+        List<EUGCContentDescriptorID>? contentDescriptors = null;
+
+        if (modConfig.contentDescriptors != null)
+        {
+            contentDescriptors = [];
+            
+            foreach (string descriptorStr in modConfig.contentDescriptors)
+            {
+                EUGCContentDescriptorID? descriptor = ContentDescriptorFromString(descriptorStr);
+
+                if (descriptor == null)
+                {
+                    Log.Error(
+                        $"Invalid content descriptor '{descriptorStr}' in workshop.json! Should be: nudity, frequent_violence, adult_only, gratuitous_nudity, or general_mature");
+                    return 1;
+                }
+                
+                contentDescriptors.Add(descriptor.Value);
+            }
         }
 
         ulong? modIdTxt = null;
@@ -96,6 +131,8 @@ public static class UploadCommand
         
         Log.Info($"Logged in as user '{SteamFriends.GetPersonaName()}'.");
 
+        WorkshopItemDetails? existingDetails;
+
         if (itemIdArg != null)
         {
             Log.Info($"Using workshop item ID {itemIdArg.Value} passed in via command line");
@@ -107,6 +144,8 @@ public static class UploadCommand
                 Log.Error($"Tried to upload to workshop item with ID {itemIdArg.Value} passed via command line, but it doesn't exist!");
                 return 1;
             }
+
+            existingDetails = await GetWorkshopItemDetails(workshopItem);
         }
         else if (modIdTxt != null)
         {
@@ -119,6 +158,8 @@ public static class UploadCommand
                 Log.Error($"Tried to upload to workshop item with ID {modIdTxt.Value} but it doesn't exist! If you wish to upload a new item, delete 'mod_id.txt' from your mod directory.");
                 return 1;
             }
+            
+            existingDetails = await GetWorkshopItemDetails(workshopItem);
         }
         else
         {
@@ -135,6 +176,16 @@ public static class UploadCommand
             }
 
             workshopItem = createItemResult.m_nPublishedFileId;
+            existingDetails = new WorkshopItemDetails
+            {
+                contentDescriptors = [],
+                dependencies = []
+            };
+        }
+
+        if (existingDetails == null)
+        {
+            return 1;
         }
         
         Log.Info($"Uploading '{modConfig.title}' to the steam workshop with item ID {workshopItem.m_PublishedFileId}...");
@@ -157,13 +208,38 @@ public static class UploadCommand
             }
         }
 
-        if (modConfig.visibility != null)
+        if (visibility != null)
         {
-            ERemoteStoragePublishedFileVisibility visibility = VisibilityFromString(modConfig.visibility)!.Value;
-            
-            if (!SteamUGC.SetItemVisibility(updateHandle, visibility))
+            if (!SteamUGC.SetItemVisibility(updateHandle, visibility.Value))
             {
                 Log.Warn("Failed to set visibility!");
+            }
+        }
+
+        if (contentDescriptors != null)
+        {
+            // Add new descriptors
+            foreach (EUGCContentDescriptorID descriptor in contentDescriptors)
+            {
+                if (!existingDetails.Value.contentDescriptors.Contains(descriptor))
+                {
+                    if (!SteamUGC.AddContentDescriptor(updateHandle, descriptor))
+                    {
+                        Log.Warn($"Failed to add content descriptor {descriptor}");
+                    }
+                }
+            }
+            
+            // Remove descriptors
+            foreach (EUGCContentDescriptorID descriptor in existingDetails.Value.contentDescriptors)
+            {
+                if (!contentDescriptors.Contains(descriptor))
+                {
+                    if (!SteamUGC.RemoveContentDescriptor(updateHandle, descriptor))
+                    {
+                        Log.Warn($"Failed to remove content descriptor {descriptor}");
+                    }
+                }
             }
         }
 
@@ -227,7 +303,7 @@ public static class UploadCommand
             writer.WriteLine(workshopItem.m_PublishedFileId);
         }
 
-        if (!await UpdateDependencies(workshopItem, modConfig.dependencies ?? []))
+        if (!await UpdateDependencies(workshopItem, existingDetails.Value.dependencies, modConfig.dependencies ?? []))
         {
             return 1;
         }
@@ -238,9 +314,8 @@ public static class UploadCommand
         return 0;
     }
 
-    private static async Task<bool> UpdateDependencies(PublishedFileId_t workshopItem, List<ulong> newDependencies)
+    private static async Task<bool> UpdateDependencies(PublishedFileId_t workshopItem, List<ulong> existingDependencies, List<ulong> newDependencies)
     {
-        List<ulong> existingDependencies = await GetAppDependencies(workshopItem);
         bool modified = false;
         bool succeeded = true;
         
@@ -249,7 +324,7 @@ public static class UploadCommand
         {
             if (!existingDependencies.Contains(dependency))
             {
-                succeeded &= await AddDependency(workshopItem, dependency);
+                succeeded = succeeded && await AddDependency(workshopItem, dependency);
                 modified = true;
             }
         }
@@ -259,7 +334,7 @@ public static class UploadCommand
         {
             if (!newDependencies.Contains(dependency))
             {
-                succeeded &= await RemoveDependency(workshopItem, dependency);
+                succeeded = succeeded && await RemoveDependency(workshopItem, dependency);
                 modified = true;
             }
         }
@@ -304,9 +379,9 @@ public static class UploadCommand
         return true;
     }
 
-    private static async Task<List<ulong>> GetAppDependencies(PublishedFileId_t workshopItem)
+    private static async Task<WorkshopItemDetails?> GetWorkshopItemDetails(PublishedFileId_t workshopItem)
     {
-        Log.Info("Querying existing app dependencies... ");
+        Log.Info("Querying existing workshop item details... ");
         
         UGCQueryHandle_t handle = SteamUGC.CreateQueryUGCDetailsRequest([workshopItem], 1);
 
@@ -317,51 +392,59 @@ public static class UploadCommand
 
             SteamAPICall_t call = SteamUGC.SendQueryUGCRequest(handle);
             using SteamCallResult<SteamUGCQueryCompleted_t> callResult = new(call);
-            SteamUGCQueryCompleted_t result = await callResult.Task;
+            SteamUGCQueryCompleted_t queryResult = await callResult.Task;
 
-            if (result.m_eResult != EResult.k_EResultOK)
+            if (queryResult.m_eResult != EResult.k_EResultOK)
             {
                 Log.Warn(
-                    $"Couldn't get dependencies for item {workshopItem.m_PublishedFileId}! Error: {result.m_eResult}");
-                return [];
+                    $"Couldn't get details for item {workshopItem.m_PublishedFileId}! Error: {queryResult.m_eResult}");
+                return null;
             }
 
             if (!SteamUGC.GetQueryUGCResult(handle, 0, out SteamUGCDetails_t details))
             {
                 Log.Warn($"Couldn't read query result for item {workshopItem.m_PublishedFileId}.");
-                return [];
+                return null;
             }
+
+            WorkshopItemDetails result = new()
+            {
+                contentDescriptors = [],
+                dependencies = []
+            };
 
             uint numChildren = details.m_unNumChildren;
-            if (numChildren == 0)
+            if (numChildren > 0)
             {
-                return [];
-            }
-
-            // GetQueryUGCChildren returns all children of the item (at result index 0) in a single call.
-            // The array must be sized to the number of children; there is no pagination for children.
-            PublishedFileId_t[] cache = new PublishedFileId_t[numChildren];
-            if (!SteamUGC.GetQueryUGCChildren(handle, 0, cache, numChildren))
-            {
-                Log.Warn($"Failed to read dependencies for item {workshopItem.m_PublishedFileId}.");
-                return [];
-            }
-
-            List<ulong> dependencies = [];
-            foreach (PublishedFileId_t dependency in cache)
-            {
-                if (dependency.m_PublishedFileId != 0)
+                // GetQueryUGCChildren returns all children of the item (at result index 0) in a single call.
+                // The array must be sized to the number of children; there is no pagination for children.
+                PublishedFileId_t[] cache = new PublishedFileId_t[numChildren];
+                if (!SteamUGC.GetQueryUGCChildren(handle, 0, cache, numChildren))
                 {
-                    dependencies.Add(dependency.m_PublishedFileId);
+                    Log.Warn($"Failed to read dependencies for item {workshopItem.m_PublishedFileId}.");
+                }
+
+                foreach (PublishedFileId_t dependency in cache)
+                {
+                    if (dependency.m_PublishedFileId != 0)
+                    {
+                        result.dependencies.Add(dependency.m_PublishedFileId);
+                    }
+                }
+
+                if (result.dependencies.Count > 0)
+                {
+                    Log.Info($"Found {result.dependencies.Count} dependencies.");
                 }
             }
 
-            if (dependencies.Count > 0)
-            {
-                Log.Info($"Found {dependencies.Count} dependencies.");
-            }
+            // There's currently a maximum of 5 content descriptors.
+            const int maxContentDescriptors = 5;
+            EUGCContentDescriptorID[] contentDescriptors = new EUGCContentDescriptorID[maxContentDescriptors];
+            SteamUGC.GetQueryUGCContentDescriptors(handle, 0, contentDescriptors, maxContentDescriptors);
+            result.contentDescriptors.AddRange(contentDescriptors);
 
-            return dependencies;
+            return result;
         }
         finally
         {
@@ -419,6 +502,19 @@ public static class UploadCommand
             "friends" => ERemoteStoragePublishedFileVisibility.k_ERemoteStoragePublishedFileVisibilityFriendsOnly,
             "friendsonly" => ERemoteStoragePublishedFileVisibility.k_ERemoteStoragePublishedFileVisibilityFriendsOnly,
             "friends_only" => ERemoteStoragePublishedFileVisibility.k_ERemoteStoragePublishedFileVisibilityFriendsOnly,
+            _ => null
+        };
+    }
+
+    private static EUGCContentDescriptorID? ContentDescriptorFromString(string contentDescriptor)
+    {
+        return contentDescriptor switch
+        {
+            "nudity" => EUGCContentDescriptorID.k_EUGCContentDescriptor_NudityOrSexualContent,
+            "frequent_violence" => EUGCContentDescriptorID.k_EUGCContentDescriptor_FrequentViolenceOrGore,
+            "adult_only" => EUGCContentDescriptorID.k_EUGCContentDescriptor_AdultOnlySexualContent,
+            "gratuitous_nudity" => EUGCContentDescriptorID.k_EUGCContentDescriptor_GratuitousSexualContent,
+            "general_mature" => EUGCContentDescriptorID.k_EUGCContentDescriptor_AnyMatureContent,
             _ => null
         };
     }

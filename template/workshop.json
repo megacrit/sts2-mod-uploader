@@ -4,5 +4,6 @@
   "visibility": "private",
   "changeNote": "None",
   "tags": [],
-  "dependencies": []
+  "dependencies": [],
+  "contentDescriptors": []
 }

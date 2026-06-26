@@ -25,6 +25,9 @@ Most properties can be substituted with `null` or removed from the JSON if you w
                                  Note: the tag "Tools & APIs" is reserved for mods that function as tools or APIs.
   "dependencies": []          -- A list of mods that your mod depends on.
                                  These should be mod IDs (can be found in the workshop URL).
+  "contentDescriptors": []    -- A list of mature content descriptors that apply to your mod.
+                                 Options include: "nudity", "frequent_violence", "adult_only",
+                                 "gratuitous_nudity", "general_mature"
 
 
                               -- The below two seem to have weird behavior but I'm including them
