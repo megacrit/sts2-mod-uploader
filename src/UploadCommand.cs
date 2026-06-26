@@ -47,7 +47,7 @@ public static class UploadCommand
         catch (JsonException)
         {
             Log.Error("Exception thrown while parsing the workshop config! Double-check that the format is correct.");
-            throw;
+            return 1;
         }
 
         if (modConfig == null)
@@ -56,7 +56,7 @@ public static class UploadCommand
             return 1;
         }
 
-        if (modConfig.visibility != null && VisibiltyFromString(modConfig.visibility) == null)
+        if (modConfig.visibility != null && VisibilityFromString(modConfig.visibility) == null)
         {
             Log.Error($"Invalid visibility '{modConfig.visibility}' in workshop.json! Should be: private, public, unlisted, or friends_only");
             return 1;
@@ -159,7 +159,7 @@ public static class UploadCommand
 
         if (modConfig.visibility != null)
         {
-            ERemoteStoragePublishedFileVisibility visibility = VisibiltyFromString(modConfig.visibility)!.Value;
+            ERemoteStoragePublishedFileVisibility visibility = VisibilityFromString(modConfig.visibility)!.Value;
             
             if (!SteamUGC.SetItemVisibility(updateHandle, visibility))
             {
@@ -218,11 +218,6 @@ public static class UploadCommand
             return 1;
         }
         
-        await UpdateDependencies(workshopItem, modConfig.dependencies ?? []);
-
-        Log.Info($"Successfully uploaded '{modConfig.title}' to the workshop with id {workshopItem.m_PublishedFileId}! Browsing to the item in Steam.");
-        SteamFriends.ActivateGameOverlayToWebPage($"steam://url/CommunityFilePage/{workshopItem.m_PublishedFileId}");
-        
         // Since we successfully uploaded, if it didn't exist already, put a mod_id.txt in the directory for later, to
         // identify which mod ID this is.
         if (modIdTxt == null || modIdTxt.Value != workshopItem.m_PublishedFileId)
@@ -231,22 +226,30 @@ public static class UploadCommand
             await using StreamWriter writer = new(fileStream);
             writer.WriteLine(workshopItem.m_PublishedFileId);
         }
+
+        if (!await UpdateDependencies(workshopItem, modConfig.dependencies ?? []))
+        {
+            return 1;
+        }
+
+        Log.Info($"Successfully uploaded '{modConfig.title}' to the workshop with id {workshopItem.m_PublishedFileId}! Browsing to the item in Steam.");
+        SteamFriends.ActivateGameOverlayToWebPage($"steam://url/CommunityFilePage/{workshopItem.m_PublishedFileId}");
         
         return 0;
     }
 
-    private static async Task UpdateDependencies(PublishedFileId_t workshopItem, List<ulong> newDependencies)
+    private static async Task<bool> UpdateDependencies(PublishedFileId_t workshopItem, List<ulong> newDependencies)
     {
         List<ulong> existingDependencies = await GetAppDependencies(workshopItem);
         bool modified = false;
+        bool succeeded = true;
         
         // Iterate new dependencies, adding dependencies that didn't exist
         foreach (ulong dependency in newDependencies)
         {
             if (!existingDependencies.Contains(dependency))
             {
-                SteamUGC.AddDependency(workshopItem, new PublishedFileId_t(dependency));
-                Log.Info($"Added dependency on {dependency}");
+                succeeded &= await AddDependency(workshopItem, dependency);
                 modified = true;
             }
         }
@@ -256,8 +259,7 @@ public static class UploadCommand
         {
             if (!newDependencies.Contains(dependency))
             {
-                SteamUGC.RemoveDependency(workshopItem, new PublishedFileId_t(dependency));
-                Log.Info($"Removed dependency on {dependency}");
+                succeeded &= await RemoveDependency(workshopItem, dependency);
                 modified = true;
             }
         }
@@ -266,6 +268,40 @@ public static class UploadCommand
         {
             Log.Info("No modifications were made to dependencies.");
         }
+
+        return succeeded;
+    }
+
+    private static async Task<bool> AddDependency(PublishedFileId_t workshopItem, ulong dependency)
+    {
+        SteamAPICall_t call = SteamUGC.AddDependency(workshopItem, new PublishedFileId_t(dependency));
+        using SteamCallResult<AddUGCDependencyResult_t> callResult = new(call);
+        AddUGCDependencyResult_t result = await callResult.Task;
+
+        if (result.m_eResult != EResult.k_EResultOK)
+        {
+            Log.Error($"Failed to add dependency on {dependency}! Result: {result.m_eResult}");
+            return false;
+        }
+
+        Log.Info($"Added dependency on {dependency}");
+        return true;
+    }
+
+    private static async Task<bool> RemoveDependency(PublishedFileId_t workshopItem, ulong dependency)
+    {
+        SteamAPICall_t call = SteamUGC.RemoveDependency(workshopItem, new PublishedFileId_t(dependency));
+        using SteamCallResult<RemoveUGCDependencyResult_t> callResult = new(call);
+        RemoveUGCDependencyResult_t result = await callResult.Task;
+
+        if (result.m_eResult != EResult.k_EResultOK)
+        {
+            Log.Error($"Failed to remove dependency on {dependency}! Result: {result.m_eResult}");
+            return false;
+        }
+
+        Log.Info($"Removed dependency on {dependency}");
+        return true;
     }
 
     private static async Task<List<ulong>> GetAppDependencies(PublishedFileId_t workshopItem)
@@ -343,7 +379,17 @@ public static class UploadCommand
             using SteamCallResult<SteamUGCQueryCompleted_t> callResult = new(call);
             SteamUGCQueryCompleted_t result = await callResult.Task;
 
-            SteamUGC.GetQueryUGCResult(handle, 0, out SteamUGCDetails_t details);
+            if (result.m_eResult != EResult.k_EResultOK)
+            {
+                Log.Warn($"Couldn't confirm existence of workshop item {workshopItem.m_PublishedFileId}. Error: {result.m_eResult}");
+                return false;
+            }
+
+            if (!SteamUGC.GetQueryUGCResult(handle, 0, out SteamUGCDetails_t details))
+            {
+                Log.Warn($"Couldn't read query result for workshop item {workshopItem.m_PublishedFileId}.");
+                return false;
+            }
 
             if (details.m_eResult == EResult.k_EResultFileNotFound)
             {
@@ -351,7 +397,8 @@ public static class UploadCommand
             }
             else if (details.m_eResult != EResult.k_EResultOK)
             {
-                Log.Warn($"Couldn't confirm existence of workshop item {workshopItem.m_PublishedFileId}. Error: {result.m_eResult}");
+                Log.Warn($"Couldn't confirm existence of workshop item {workshopItem.m_PublishedFileId}. Error: {details.m_eResult}");
+                return false;
             }
 
             return true;
@@ -362,13 +409,15 @@ public static class UploadCommand
         }
     }
 
-    private static ERemoteStoragePublishedFileVisibility? VisibiltyFromString(string visibility)
+    private static ERemoteStoragePublishedFileVisibility? VisibilityFromString(string visibility)
     {
-        return visibility switch
+        return visibility.Trim().ToLowerInvariant() switch
         {
             "private" => ERemoteStoragePublishedFileVisibility.k_ERemoteStoragePublishedFileVisibilityPrivate,
             "public" => ERemoteStoragePublishedFileVisibility.k_ERemoteStoragePublishedFileVisibilityPublic,
             "unlisted" => ERemoteStoragePublishedFileVisibility.k_ERemoteStoragePublishedFileVisibilityUnlisted,
+            "friends" => ERemoteStoragePublishedFileVisibility.k_ERemoteStoragePublishedFileVisibilityFriendsOnly,
+            "friendsonly" => ERemoteStoragePublishedFileVisibility.k_ERemoteStoragePublishedFileVisibilityFriendsOnly,
             "friends_only" => ERemoteStoragePublishedFileVisibility.k_ERemoteStoragePublishedFileVisibilityFriendsOnly,
             _ => null
         };

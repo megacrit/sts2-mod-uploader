@@ -69,7 +69,7 @@ public static class Program
                 "Remove the mod from the workshop. Your local workspace will be unaffected.");
             removeCommand.Options.Add(deleteWorkspaceOption);
             removeCommand.Options.Add(deleteItemIdOption);
-            removeCommand.SetAction(p => RemoveCommand.Remove(p.GetRequiredValue(deleteWorkspaceOption), p.GetValue(deleteItemIdOption)));
+            removeCommand.SetAction(p => RemoveCommand.Remove(p.GetValue(deleteWorkspaceOption), p.GetValue(deleteItemIdOption)));
 
             RootCommand rootCommand = new("Utility for creating and updating STS2 Steam Workshop mods.");
             rootCommand.Subcommands.Add(newCommand);
