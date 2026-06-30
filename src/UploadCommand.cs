@@ -304,9 +304,17 @@ public static class UploadCommand
             return 1;
         }
         
-        if (!await UpdateDependencies(workshopItem, existingDetails.Value.dependencies, modConfig.dependencies ?? []))
+        // Only reconcile required items when workshop.json explicitly lists "dependencies".
+        // If the key is omitted (null), leave the item's existing required items untouched.
+        // Otherwise an upload from a workflow that doesn't track dependencies (or one that
+        // simply doesn't set the field) reconciles against an empty list and wipes every
+        // Required Item the author configured on the Workshop page.
+        if (modConfig.dependencies != null)
         {
-            return 1;
+            if (!await UpdateDependencies(workshopItem, existingDetails.Value.dependencies, modConfig.dependencies))
+            {
+                return 1;
+            }
         }
 
         Log.Info($"Successfully uploaded '{modConfig.title}' to the workshop with id {workshopItem.m_PublishedFileId}! Browsing to the item in Steam.");
