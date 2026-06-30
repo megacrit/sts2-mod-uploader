@@ -200,6 +200,15 @@ public static class UploadCommand
 
         UGCUpdateHandle_t updateHandle = SteamUGC.StartItemUpdate(_sts2AppId, workshopItem);
 
+        // The title/description in this update belong to the primary language. Set it explicitly so
+        // the default text lands in a known language bucket (not the uploader's Steam UI language),
+        // and so the localized entries below are keyed off it.
+        string primaryLanguage = string.IsNullOrWhiteSpace(modConfig.language) ? "english" : modConfig.language;
+        if (!SteamUGC.SetItemUpdateLanguage(updateHandle, primaryLanguage))
+        {
+            Log.Warn($"Failed to set primary language '{primaryLanguage}'!");
+        }
+
         if (modConfig.title != null)
         {
             if (!SteamUGC.SetItemTitle(updateHandle, modConfig.title))
@@ -309,6 +318,20 @@ public static class UploadCommand
             return 1;
         }
 
+        // Localized title/description: each language needs its own metadata-only item update.
+        // The content/preview uploaded above is language-independent and is not re-sent.
+        if (modConfig.localizations != null)
+        {
+            foreach (ModLocalization localization in modConfig.localizations)
+            {
+                if (string.IsNullOrWhiteSpace(localization.language) || localization.language == primaryLanguage)
+                {
+                    continue;
+                }
+                await SubmitLocalizedMetadata(workshopItem, localization, modConfig.changeNote);
+            }
+        }
+
         Log.Info($"Successfully uploaded '{modConfig.title}' to the workshop with id {workshopItem.m_PublishedFileId}! Browsing to the item in Steam.");
         SteamFriends.ActivateGameOverlayToWebPage($"steam://url/CommunityFilePage/{workshopItem.m_PublishedFileId}");
 
@@ -328,6 +351,43 @@ public static class UploadCommand
         }
         
         return 0;
+    }
+
+    // Submit one language's localized title/description as a standalone metadata-only update.
+    private static async Task SubmitLocalizedMetadata(PublishedFileId_t workshopItem, ModLocalization localization, string? changeNote)
+    {
+        Log.Info($"Setting '{localization.language}' title/description...");
+
+        UGCUpdateHandle_t handle = SteamUGC.StartItemUpdate(_sts2AppId, workshopItem);
+        if (!SteamUGC.SetItemUpdateLanguage(handle, localization.language))
+        {
+            Log.Warn($"Failed to set update language '{localization.language}'!");
+        }
+        if (localization.title != null)
+        {
+            SteamUGC.SetItemTitle(handle, localization.title);
+        }
+        if (localization.description != null)
+        {
+            SteamUGC.SetItemDescription(handle, localization.description);
+        }
+
+        SteamAPICall_t call = SteamUGC.SubmitItemUpdate(handle, changeNote ?? "");
+        using SteamCallResult<SubmitItemUpdateResult_t> callResult = new(call);
+        while (!callResult.Task.IsCompleted)
+        {
+            await Task.Delay(300);
+        }
+
+        SubmitItemUpdateResult_t result = await callResult.Task;
+        if (result.m_eResult != EResult.k_EResultOK)
+        {
+            Log.Warn($"Failed to set '{localization.language}' localization! Result: {result.m_eResult}");
+        }
+        else
+        {
+            Log.Info($"Set '{localization.language}' localization.");
+        }
     }
 
     private static async Task<bool> UpdateDependencies(PublishedFileId_t workshopItem, List<ulong> existingDependencies, List<ulong> newDependencies)
