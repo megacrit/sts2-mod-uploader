@@ -4,6 +4,10 @@
 
 * workshop.json -- The config describing the Steam workspace mod.
 
+* description.txt -- Optional. The description of your mod. If present, this file is used instead
+                     of the "description" field in workshop.json. Useful for long descriptions
+                     that are awkward to write as a single JSON string.
+
 * content       -- Where you should place the mod files to be uploaded to Steam Workshop.
                    This should be at least a JSON file, and probably a PCK & DLL.
 
@@ -26,7 +30,8 @@ Most properties can be substituted with `null` or removed from the JSON if you w
 ```
 {
   "title": "",                -- The title of your mod.
-  "description": "",          -- The description.
+  "description": "",          -- The description. Alternatively, place a description.txt file
+                               --   in the workspace directory instead (see above).
   "visibility": "private",    -- The visibility status of the mod. 
                                   Options include: "private", "public", "unlisted", "friends_only".
   "changeNote": "",           -- A note for describing the newest changes you've made to your users.
