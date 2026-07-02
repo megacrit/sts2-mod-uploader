@@ -4,7 +4,7 @@
 1. Double-clicking on the ModUploader.exe file should create a new folder called `NewModWorkspace`.
 2. Rename `NewModWorkspace` to whatever you want.
 3. Place your mod content in the `content` directory within the workspace. This is what will be uploaded to the Steam workshop.
-4. Fill in the details for the `workshop.json` located in your mod's workspace. If the fields are unclear, refer to the other README.md file located in the mod's workspace for descriptions of what each field does.
+4. Fill in the details for the `workshop.json` located in your mod's workspace. If the fields are unclear, refer to the other README.md file located in the mod's workspace for descriptions of what each field does. For long descriptions, you can create a `description.txt` file in the workspace instead of using the `description` field in `workshop.json`.
 5. Replace the `image.png` in your mod's workspace with an image of the same name that you wish to use for your mod. The image must be less than 1MB because of limits on Steam's backend.
 6. Open a command line window inside the folder with the ModUploader executable.
 7. Run `ModUploader.exe upload -w <workspace-folder>` to upload the mod.

@@ -122,6 +122,27 @@ public static class UploadCommand
             modIdTxt = modId;
         }
 
+        FileInfo descriptionFile = new(Path.Combine(workspaceDirectory.FullName, "description.txt"));
+        if (descriptionFile.Exists)
+        {
+            if (modConfig.description != null)
+            {
+                Log.Warn("Both description.txt and the 'description' field in workshop.json are present. Using description.txt; the workshop.json field will be ignored.");
+            }
+
+            try
+            {
+                await using var descriptionStream = descriptionFile.OpenRead();
+                using var descriptionReader = new StreamReader(descriptionStream);
+                modConfig.description = (await descriptionReader.ReadToEndAsync()).Trim();
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Failed to read description.txt: {ex.Message}");
+                return 1;
+            }
+        }
+
         // Validation is all done. Start the upload process.
         if (!Program.InitializeSteam())
         {
